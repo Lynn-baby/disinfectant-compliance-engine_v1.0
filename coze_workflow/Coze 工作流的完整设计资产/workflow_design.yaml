@@ -1,0 +1,148 @@
+# ============================================
+# Coze Workflow 完整流程图
+# 业务：AI 售前 Agent - xx检测
+# ============================================
+
+# Coze Workflow 分为 5 个节点层：
+
+# ┌─────────────────────────────────────────────────────┐
+# │                   L1: 意图识别                        │
+# │           大模型判断用户意图 → 选择 Function            │
+# └──────────────────────┬──────────────────────────────┘
+#                        │
+#         ┌──────────────┼──────────────┐
+#         ▼              ▼              ▼
+#   ┌──────────┐  ┌──────────┐  ┌──────────┐
+#   │L2: 澄清  │  │L2: 调用  │  │L2: 闲聊  │
+#   │信息不足   │  │Function  │  │ 非业务   │
+#   └────┬─────┘  └────┬─────┘  └────┬─────┘
+#        │             │             │
+#        ▼             ▼             ▼
+#   ┌──────────────────────────────────────┐
+#   │         L3: 结果处理 & 组装回复        │
+#   │   把 Function 返回的结构化数据           │
+#   │   转为自然语言回复                      │
+#   └──────────────────────┬───────────────┘
+#                          │
+#                          ▼
+#   ┌──────────────────────────────────────┐
+#   │         L4: 追问 & 下一步引导          │
+#   │   主动询问缺失信息、推进到下个环节        │
+#   └──────────────────────────────────────┘
+
+# ============================================
+# 具体配置（Coze 平台操作步骤）
+# ============================================
+
+nodes:
+
+  # ─── 节点1: 开始节点 ───
+  start:
+    type: start
+    output: user_message  # 用户的原始输入
+
+  # ─── 节点2: 意图识别 (LLM Node) ───
+  intent_recognition:
+    type: llm
+    model: 使用 Coze 内置大模型 或 你的 API
+    input: "{{start.user_message}}"
+    system_prompt: |
+      你是一个消毒产品检测/备案行业的销售助手。请判断用户的意图属于哪一类：
+
+      【意图分类】
+      1. FEASIBILITY_CHECK - 询问产品能否做消字号备案/检测（如"我这个能备案吗""这种能做吗"）
+      2. PRICING_INQUIRY - 询问价格/费用（如"多少钱""怎么收费""价格"）
+      3. TEST_ITEM_INQUIRY - 询问需要做什么检测（如"需要检测什么""要做哪些项目"）
+      4. DOCUMENT_INQUIRY - 询问需要什么资料（如"要准备什么材料""需要哪些文件"）
+      5. TIMELINE_INQUIRY - 询问办理周期（如"多久能办好""多长时间"）
+      6. REGULATION_INQUIRY - 询问法规/标准（如"国家有什么要求""什么标准"）
+      7. CASE_INQUIRY - 询问案例或表达不信任（如"你们做过类似的吗""靠不靠谱"）
+      8. GENERAL_CHAT - 一般性闲聊/打招呼/感谢（如"你好""谢谢"）
+      9. UNCLEAR - 信息不足，无法判断
+
+      请按以下 JSON 格式输出（只输出 JSON，不要其他内容）：
+      {
+        "intent": "意图类别",
+        "confidence": 0.0-1.0,
+        "missing_info": ["缺少的关键信息1", "缺少的关键信息2"],
+        "reasoning": "判断依据"
+      }
+
+      示例：
+      用户说"我这个雾化器，配合次氯酸消毒液用，能做消字号吗"
+      → {"intent": "FEASIBILITY_CHECK", "confidence": 0.95, "missing_info": ["产品类型需要确认是否器械还是设备"], "reasoning": "用户在询问产品能否备案"}
+
+    output_schema:
+      intent: string
+      confidence: number
+      missing_info: [string]
+
+  # ─── 节点3: 条件路由 (If-Else Node) ───
+  routing:
+    type: condition
+    input: "{{intent_recognition.intent}}"
+    branches:
+      FEASIBILITY_CHECK: → call_feasibility_check
+      PRICING_INQUIRY: → call_pricing
+      TEST_ITEM_INQUIRY: → call_test_items
+      DOCUMENT_INQUIRY: → call_documents
+      TIMELINE_INQUIRY: → call_timeline
+      REGULATION_INQUIRY: → call_regulations
+      CASE_INQUIRY: → call_case_match
+      GENERAL_CHAT: → general_reply
+      UNCLEAR: → clarify_question
+
+  # ─── 节点4: 各 Function 调用 (Plugin/Code Node) ───
+
+  # 方式A: 用 Coze 内置的"知识库"节点（推荐起步）
+  # 方式B: 用"代码节点"写 JavaScript/Python 逻辑
+  # 方式C: 用"插件节点"调外部 API
+
+  # 以 feasibility_check 为例：
+  call_feasibility_check:
+    type: knowledge_base  # 或 code/plugin
+    # 从知识库中检索相关规则
+    query: |
+      产品类型：{{extracted.product_type}}
+      消毒方式：{{extracted.method}}
+      问题：{{start.user_message}}
+    knowledge_base_id: "你的知识库ID"
+    top_k: 3
+    # 或者用代码节点写死规则：
+    # 见 knowledge_base/feasibility_rules.yaml
+
+  # ─── 节点5: 回复组装 (LLM Node) ───
+  assemble_reply:
+    type: llm
+    input:
+      user_message: "{{start.user_message}}"
+      function_result: "{{上一个节点的输出}}"
+      intent: "{{intent_recognition.intent}}"
+    system_prompt: |
+      你是xx检测的 AI 售前顾问。根据检索到的信息回答客户问题。
+
+      回复要求：
+      1. 先直接回答客户的核心问题
+      2. 用结构化的方式列出关键信息
+      3. 提供下一步行动建议
+      4. 对不确定的信息坦诚说明
+      5. 语气专业但友好，不要太生硬
+
+      检索到的参考信息：
+      {{function_result}}
+
+  # ─── 节点6: 追问引导 (LLM Node) ───
+  follow_up:
+    type: llm
+    input: "{{assemble_reply.output}}"
+    system_prompt: |
+      在回复末尾，根据当前对话阶段，追加一个相关追问或下一步建议：
+
+      【追问模板】
+      - 报价后 → "方便告诉我您的预算范围吗？这样我可以给您推荐更合适的方案"
+      - 备案可行后 → "您的产品有现成的检测报告吗？如果有的话可以节省很多时间"
+      - 资料清单后 → "需要我把相关的模板发给您吗？"
+      - 案例后 → "您方便简单介绍一下您的产品吗？我可以给您做个初步评估"
+      - 结束时 → "方便加个微信吗？我把详细资料发您" (模仿实际销售流程)
+
+      只输出完整的回复内容，不要多余的解释。

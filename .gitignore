@@ -1,0 +1,29 @@
+__pycache__/
+*.pyc
+.DS_Store
+*.swp
+*.swo
+.venv/
+venv/
+.env
+
+# 第三方依赖（package.json 记录了依赖清单，安装时自动生成）
+node_modules/
+
+# 含个人隐私数据（通话记录含电话号码）
+cleaned_data/
+转录文本/
+
+# 原始客户资料（聊天记录、客户信息、产品照片）
+zzzz2023-05原始资料/
+录音分析汇总_消字号/
+
+# 大型数据文件 / 二进制
+*.xlsx
+*.numbers
+*.xmind
+analysis_result.json
+ocr_output/
+
+# 本地 Claude 配置（每台机器不同）
+.claude/settings.local.json

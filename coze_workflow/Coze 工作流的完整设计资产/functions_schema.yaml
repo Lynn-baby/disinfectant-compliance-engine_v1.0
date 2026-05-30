@@ -1,0 +1,188 @@
+# ============================================
+# AI 售前 Agent - Coze Function Calling Schema
+# 业务：xx检测 消毒产品检测/备案服务
+# ============================================
+
+functions:
+
+  # ─── Function 1: 备案可行性判断 ───
+  # 这是最高频的场景：客户问"我的产品能不能备消字号"
+  - name: check_filing_feasibility
+    description: |
+      判断一个产品是否可以进行消字号备案。
+      消字号备案的核心条件：产品本身必须具备消毒/抗菌功能。
+      纯物理设备（不产生消毒因子）、外置消毒液驱动的设备、一般电子产品均不可备案。
+    parameters:
+      product_type:
+        type: string
+        enum: [消毒液, 消毒器械, 抗抑菌制剂, 雾化器/喷雾设备, 空气消毒机, 臭氧发生器, 次氯酸发生器, 其他]
+        description: 客户产品的类型
+      disinfection_method:
+        type: string
+        enum: [自身产生消毒因子, 外置消毒液, 物理过滤, 紫外线, 臭氧, 次氯酸电解, 不清楚]
+        description: 产品的消毒方式/原理
+      has_independent_disinfection:
+        type: boolean
+        description: 机器本身是否能独立产生消毒作用（不依赖外置消毒液）
+    returns:
+      feasible: boolean          # 能否备案
+      reason: string             # 原因说明
+      alternative: string        # 如果不能备案，替代方案是什么
+      required_docs: [string]    # 如果可以备案，需要的基础资料清单
+    knowledge_source: "法规标准/国家卫生健康委办公厅关于全国消毒产品网上备案信息服务平台上线的通知.pdf + 通话记录案例"
+
+  # ─── Function 2: 检测项目推荐 ───
+  # 客户常问："我需要做哪些检测？"
+  - name: recommend_test_items
+    description: |
+      根据产品类型、使用场景和客户预算，推荐需要做的检测项目。
+      消毒产品检测分为强制项（安规/备案必须）和可选项（市场推广用）。
+    parameters:
+      product_type:
+        type: string
+        enum: [消毒液, 消毒器械, 抗抑菌制剂, 空气消毒机, 雾化消毒设备]
+        description: 产品类型
+      usage_scenario:
+        type: string
+        enum: [空气消毒, 物表消毒, 手消毒, 皮肤消毒, 医疗器械消毒, 其他]
+        description: 使用场景
+      purpose:
+        type: string
+        enum: [消字号备案, 市场推广, 客户要求, 不清楚]
+        description: 做检测的目的
+      budget_range:
+        type: string
+        enum: [经济型, 标准型, 全面型, 不清楚]
+        description: 客户预算范围
+    returns:
+      required_items:
+        - name: string          # 检测项目名称
+          standard: string      # 依据标准
+          estimated_cost: string  # 预估费用
+          cycle_days: number    # 周期(天)
+          sample_count: number  # 样品数量
+          note: string          # 说明
+      optional_items: [...]    # 可选项目
+      total_estimate:
+        min_cost: number
+        max_cost: number
+        total_cycle: string
+    knowledge_source: "报价单/消毒剂报价-快速报价-2.0.xlsx + SKU数据库"
+
+  # ─── Function 3: 报价查询 ───
+  # 客户问："多少钱？"
+  - name: query_pricing
+    description: |
+      查询具体检测项目的报价，包括单价、打包价、加急费用等。
+    parameters:
+      test_items:
+        type: [string]
+        description: 需要报价的检测项目列表
+      is_urgent:
+        type: boolean
+        description: 是否需要加急
+      product_category:
+        type: string
+        enum: [消毒剂, 消毒器械, 抗抑菌制剂, 一次性卫生用品]
+        description: 产品大类
+    returns:
+      items:
+        - name: string
+          unit_price: number
+          sample_quantity: number
+          total_price: number
+          standard_cycle: string
+          urgent_cycle: string
+          urgent_surcharge: number
+      total: number
+    knowledge_source: "报价单/消毒剂报价-快速报价-2.0.xlsx + 报价汇总/"
+
+  # ─── Function 4: 备案资料清单 ───
+  # 客户问："需要准备什么材料？"
+  - name: get_document_checklist
+    description: |
+      获取消字号备案（卫生安全评价报告备案）所需的完整资料清单。
+    parameters:
+      product_type:
+        type: string
+        enum: [消毒剂, 消毒器械, 抗抑菌制剂]
+      filing_location:
+        type: string
+        description: 备案地区（不同省份要求可能有差异）
+    returns:
+      documents:
+        - category: string       # 资料分类
+          name: string           # 资料名称
+          description: string    # 具体要求
+          template_available: boolean  # 是否有模板
+      total_count: number
+      notes: [string]
+    knowledge_source: "备案流程及清单.xls + 卫健委要求.docx"
+
+  # ─── Function 5: 周期查询 ───
+  # 客户问："多久能办好？"
+  - name: query_timeline
+    description: |
+      查询完整的备案办理周期，从检测到备案完成的全过程时间预估。
+    parameters:
+      product_type:
+        type: string
+        enum: [消毒剂, 消毒器械, 抗抑菌制剂]
+      has_test_report:
+        type: boolean
+        description: 是否已有检测报告
+      filing_location:
+        type: string
+        description: 备案地
+    returns:
+      phases:
+        - name: string          # 阶段名称
+          duration: string      # 耗时
+          description: string   # 说明
+          depends_on: string    # 前置条件
+      total_min_days: number
+      total_max_days: number
+    knowledge_source: "通话记录 + 备案流程文档"
+
+  # ─── Function 6: 法规查询 ───
+  # 客户问："国家有什么要求？""什么标准？"
+  - name: search_regulations
+    description: |
+      搜索消毒产品相关法规标准信息。
+    parameters:
+      keyword:
+        type: string
+        description: 搜索关键词（产品类型、标准号、检测项目等）
+      regulation_type:
+        type: string
+        enum: [国家标准GB, 行业标准WS, 卫健委通知, 企业标准, 全部]
+        description: 法规类型
+    returns:
+      results:
+        - title: string
+          doc_number: string
+          summary: string
+          key_points: [string]
+    knowledge_source: "法规标准/ + 消字号最新法规标准-全/"
+
+  # ─── Function 7: 案例匹配 ───
+  # 客户问："你们做过类似的吗？"
+  - name: match_case
+    description: |
+      根据客户情况匹配历史成功案例，增强说服力。
+    parameters:
+      product_type:
+        type: string
+      customer_industry:
+        type: string
+      key_concern:
+        type: string
+        description: 客户最关心的问题
+    returns:
+      cases:
+        - company_name: string
+          product: string
+          service_provided: string
+          result: string
+          highlight: string
+    knowledge_source: "客户信息汇总/ (30+客户案例)"
