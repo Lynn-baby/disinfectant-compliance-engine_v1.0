@@ -27,3 +27,4 @@ ocr_output/
 
 # 本地 Claude 配置（每台机器不同）
 .claude/settings.local.json
+.cozeproj/reduction
