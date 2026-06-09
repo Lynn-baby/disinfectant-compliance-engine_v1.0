@@ -13,7 +13,9 @@
 import os
 import sys
 import json
+import time
 import tempfile
+from collections import defaultdict
 from pathlib import Path
 
 # 项目根目录加入 path
@@ -21,7 +23,7 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,13 +31,36 @@ from fastapi.staticfiles import StaticFiles
 from server.pipeline import preaudit, PipelineResult
 from server.ocr_service import process_file
 
+# ═══════════════════════════════════════════════════
+# 安全配置
+# ═══════════════════════════════════════════════════
+
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024   # 10MB
+MAX_BODY_SIZE = 10 * 1024             # 10KB
+RATE_LIMIT_WINDOW = 60                # 秒
+RATE_LIMIT_MAX = 5                    # 每窗口最多 5 次
+
+_rate_log: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_rate_limit(client_ip: str) -> bool:
+    now = time.time()
+    cutoff = now - RATE_LIMIT_WINDOW
+    _rate_log[client_ip] = [t for t in _rate_log[client_ip] if t > cutoff]
+    if len(_rate_log[client_ip]) >= RATE_LIMIT_MAX:
+        return False
+    _rate_log[client_ip].append(now)
+    return True
+
+# ═══════════════════════════════════════════════════
+
 app = FastAPI(
     title="消字号合规预审引擎",
     description="消毒产品合规预审 API — 支持文本提交和文件上传（PDF/图片）",
     version="1.0.0",
 )
 
-# CORS: 允许原型 HTML 本地调用 (file://) 和开发服务器
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -43,6 +68,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 请求体大小限制中间件
+@app.middleware("http")
+async def limit_request_size(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length:
+        length = int(content_length)
+        path = request.url.path
+        if path == "/api/upload" and length > MAX_UPLOAD_SIZE:
+            return JSONResponse(status_code=413, content={"success": False, "error": f"文件过大，最大 {MAX_UPLOAD_SIZE // (1024*1024)}MB"})
+        if path == "/api/preaudit" and length > MAX_BODY_SIZE:
+            return JSONResponse(status_code=413, content={"success": False, "error": f"请求体过大，最大 {MAX_BODY_SIZE // 1024}KB"})
+    return await call_next(request)
 
 
 @app.get("/api/health")
@@ -56,21 +94,12 @@ async def health():
 
 
 @app.post("/api/preaudit")
-async def preaudit_text(payload: dict):
-    """文本直接提交 — 跳过 OCR，直接跑合规预审。
+async def preaudit_text(payload: dict, request: Request):
+    """文本直接提交 — 跳过 OCR，直接跑合规预审。"""
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
 
-    Request body (JSON):
-    {
-        "product_name": "75%酒精消毒液",
-        "dosage_form": "液体",
-        "main_ingredients": "乙醇、纯化水",
-        "target_claims": "消毒",
-        "domestic_or_imported": "国产",
-        "customer_type": "品牌方",
-        "urgency_level": "普通",
-        "user_input": "原始用户输入（可选，用于安全扫描）"
-    }
-    """
     user_input = payload.get("user_input", "") or payload.get("product_name", "")
     result = await preaudit(payload, user_input=user_input)
 
@@ -88,11 +117,12 @@ async def preaudit_text(payload: dict):
 
 
 @app.post("/api/upload")
-async def preaudit_upload(file: UploadFile = File(...)):
-    """上传产品标签文件 — OCR 解析后跑合规预审。
+async def preaudit_upload(file: UploadFile = File(...), request: Request = None):
+    """上传产品标签文件 — OCR 解析后跑合规预审。最大 10MB。"""
+    client_ip = request.client.host if request and request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
 
-    支持: PDF, PNG, JPG, JPEG
-    """
     allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.tiff'}
     ext = Path(file.filename).suffix.lower() if file.filename else ""
 
