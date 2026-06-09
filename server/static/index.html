@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>消字号合规预审引擎</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: { 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse-dot { 0%, 80%, 100% { opacity: 0; } 40% { opacity: 1; } }
+    .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+    .animate-spin { animation: spin 0.8s linear infinite; }
+    .pulse-dot { animation: pulse-dot 1.4s infinite ease-in-out both; }
+    .pulse-dot:nth-child(1) { animation-delay: -0.32s; }
+    .pulse-dot:nth-child(2) { animation-delay: -0.16s; }
+    .pulse-dot:nth-child(3) { animation-delay: 0s; }
+    .drop-zone-dragover { border-color: #3b82f6; background-color: #eff6ff; }
+    .drop-zone-dragover .drop-icon { color: #3b82f6; }
+    .report-section h2 { font-size: 1.125rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; color: #1e293b; }
+    .report-section h3 { font-size: 1rem; font-weight: 600; margin-top: 0.75rem; margin-bottom: 0.25rem; color: #334155; }
+    .report-section ul { list-style: disc; padding-left: 1.5rem; margin-top: 0.25rem; margin-bottom: 0.5rem; }
+    .report-section p { margin-bottom: 0.5rem; line-height: 1.6; }
+    .report-section strong { font-weight: 600; }
+    .report-section code { background: #f1f5f9; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.875rem; }
+    .report-section table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.875rem; }
+    .report-section th, .report-section td { border: 1px solid #e2e8f0; padding: 0.5rem 0.75rem; text-align: left; }
+    .report-section th { background: #f8fafc; font-weight: 600; }
+    .report-section hr { border: none; border-top: 1px solid #e2e8f0; margin: 1rem 0; }
+    .report-section blockquote { border-left: 3px solid #3b82f6; padding-left: 0.75rem; margin: 0.5rem 0; color: #475569; font-style: italic; }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen font-sans antialiased">
+
+  <!-- ===== HEADER ===== -->
+  <header class="pt-10 pb-6 text-center px-4">
+    <h1 class="text-3xl md:text-4xl font-bold text-slate-800 tracking-tight">
+      消字号合规预审
+    </h1>
+    <p class="mt-2 text-lg text-slate-500">
+      上传产品标签，30秒获取免费预审报告
+    </p>
+  </header>
+
+  <!-- ===== MODE TOGGLE ===== -->
+  <div class="max-w-2xl mx-auto px-4 mb-4">
+    <div class="flex items-center justify-center gap-4 text-sm">
+      <button id="mode-upload" class="mode-btn px-5 py-2 rounded-full font-medium transition-all duration-200 bg-primary-600 text-white shadow-sm" data-mode="upload">
+        <svg class="inline-block w-4 h-4 mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+        上传文件
+      </button>
+      <button id="mode-text" class="mode-btn px-5 py-2 rounded-full font-medium transition-all duration-200 bg-white text-slate-600 border border-slate-300 hover:bg-slate-50" data-mode="text">
+        <svg class="inline-block w-4 h-4 mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></path></svg>
+        填写信息
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== MAIN CARD ===== -->
+  <main class="max-w-2xl mx-auto px-4 pb-12">
+
+    <!-- ---------- UPLOAD MODE ---------- -->
+    <div id="upload-mode" class="mode-panel bg-white rounded-2xl shadow-lg border border-slate-200 p-6 md:p-8 transition-all duration-300">
+
+      <!-- Drop Zone -->
+      <div id="dropZone" class="drop-zone relative border-2 border-dashed border-slate-300 rounded-xl p-8 md:p-12 text-center cursor-pointer transition-all duration-200 hover:border-primary-400 hover:bg-primary-50/30">
+        <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg" class="hidden" />
+        <div class="drop-icon text-slate-300 mb-3 transition-colors duration-200">
+          <svg class="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+        </div>
+        <p class="text-base font-medium text-slate-600 mb-1">
+          拖拽文件到此处，或<span class="text-primary-600 underline underline-offset-2">点击选择</span>
+        </p>
+        <p class="text-sm text-slate-400">支持 PDF、PNG、JPG 格式</p>
+        <div id="fileNameDisplay" class="hidden mt-3 text-sm text-primary-600 font-medium"></div>
+      </div>
+
+      <!-- Upload Button -->
+      <div class="mt-5 text-center">
+        <button id="submitUploadBtn" disabled
+          class="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-base font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed bg-primary-600 text-white hover:bg-primary-700 active:scale-[0.98] shadow-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          开始预审
+        </button>
+      </div>
+
+      <!-- Upload Tips -->
+      <div class="mt-5 flex flex-wrap gap-2 justify-center text-xs text-slate-400">
+        <span class="inline-flex items-center gap-1 px-2 py-1 bg-slate-50 rounded"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>文件安全加密</span>
+        <span class="inline-flex items-center gap-1 px-2 py-1 bg-slate-50 rounded"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>30秒快速出报告</span>
+      </div>
+    </div>
+
+    <!-- ---------- TEXT MODE ---------- -->
+    <div id="text-mode" class="mode-panel hidden bg-white rounded-2xl shadow-lg border border-slate-200 p-6 md:p-8 transition-all duration-300">
+      <form id="textForm" class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">产品名称 <span class="text-red-400">*</span></label>
+            <input type="text" name="product_name" required placeholder="如：75%酒精消毒液"
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-shadow" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">剂型</label>
+            <select name="dosage_form"
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-shadow bg-white">
+              <option value="液体">液体</option>
+              <option value="凝胶">凝胶</option>
+              <option value="喷雾">喷雾</option>
+              <option value="片剂">片剂</option>
+              <option value="粉剂">粉剂</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-slate-700 mb-1">主要成分</label>
+            <input type="text" name="main_ingredients" placeholder="如：乙醇、纯化水"
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-shadow" />
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-slate-700 mb-1">宣称功效</label>
+            <input type="text" name="target_claims" placeholder="如：消毒、杀菌、抑菌"
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-shadow" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">产地</label>
+            <select name="domestic_or_imported"
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-shadow bg-white">
+              <option value="国产">国产</option>
+              <option value="进口">进口</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">客户类型</label>
+            <select name="customer_type"
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-shadow bg-white">
+              <option value="品牌方">品牌方</option>
+              <option value="代工厂">代工厂</option>
+              <option value="经销商">经销商</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">紧急程度</label>
+            <select name="urgency_level"
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-shadow bg-white">
+              <option value="普通">普通</option>
+              <option value="紧急">紧急</option>
+              <option value="加急">加急</option>
+            </select>
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-slate-700 mb-1">补充信息（可选）</label>
+            <textarea name="user_input" rows="3" placeholder="输入产品标签上的其他文字信息……"
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-shadow resize-y"></textarea>
+          </div>
+        </div>
+        <div class="text-center pt-2">
+          <button type="submit" id="submitTextBtn"
+            class="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-base font-medium transition-all duration-200 bg-primary-600 text-white hover:bg-primary-700 active:scale-[0.98] shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            提交预审
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- ===== PROGRESS ===== -->
+    <div id="progressArea" class="hidden mt-6 bg-white rounded-xl border border-slate-200 p-5 text-center shadow-sm animate-fade-in">
+      <div class="flex items-center justify-center gap-3">
+        <div class="flex gap-1">
+          <span class="pulse-dot w-2 h-2 bg-primary-500 rounded-full inline-block"></span>
+          <span class="pulse-dot w-2 h-2 bg-primary-500 rounded-full inline-block"></span>
+          <span class="pulse-dot w-2 h-2 bg-primary-500 rounded-full inline-block"></span>
+        </div>
+        <span id="progressText" class="text-sm font-medium text-slate-600">正在分析产品信息……</span>
+      </div>
+      <div class="mt-3 w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+        <div id="progressBar" class="bg-primary-500 h-1.5 rounded-full transition-all duration-500 ease-out" style="width: 30%"></div>
+      </div>
+    </div>
+
+    <!-- ===== ERROR ===== -->
+    <div id="errorArea" class="hidden mt-6 bg-red-50 border border-red-200 rounded-xl p-4 animate-fade-in">
+      <div class="flex items-start gap-3">
+        <svg class="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <div>
+          <p class="font-semibold text-red-800 text-sm">预审失败</p>
+          <p id="errorMessage" class="text-red-600 text-sm mt-1"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== REPORT ===== -->
+    <div id="reportArea" class="hidden mt-6 animate-fade-in">
+      <!-- Summary Card -->
+      <div id="summaryCard" class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm mb-4">
+        <h3 class="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">预审摘要</h3>
+        <div id="summaryGrid" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center"></div>
+      </div>
+
+      <!-- Report Body -->
+      <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm mb-4">
+        <h3 class="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">预审报告</h3>
+        <div id="reportBody" class="report-section text-sm text-slate-700 leading-relaxed"></div>
+      </div>
+
+      <!-- CTA -->
+      <div id="ctaArea" class="bg-amber-50 border border-amber-200 rounded-xl p-5 shadow-sm text-center">
+        <div class="inline-flex items-center justify-center w-10 h-10 bg-amber-100 rounded-full mb-3">
+          <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        </div>
+        <p class="font-semibold text-amber-900 text-base">这是免费预审结果（简化版）</p>
+        <p class="text-amber-700 text-sm mt-1">完整报告包含：详细风险评级、法规条款引用、修改建议清单</p>
+        <p class="text-amber-600 text-xs mt-2">
+          <svg class="inline-block w-3 h-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          付费报告由合规专家复核后出具，具有法律参考效力
+        </p>
+        <a href="#contact" class="inline-flex items-center gap-2 mt-3 bg-amber-600 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-amber-700 transition-colors shadow-sm">
+          获取完整报告 ¥499 →
+        </a>
+      </div>
+    </div>
+
+    <!-- ===== TRUST MARKERS ===== -->
+    <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 text-center text-sm text-slate-500">
+      <div class="bg-white/70 backdrop-blur rounded-xl px-4 py-4 border border-slate-200/60 shadow-sm">
+        <svg class="w-6 h-6 mx-auto text-emerald-500 mb-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        <span class="font-medium">基于最新法规标准</span>
+      </div>
+      <div class="bg-white/70 backdrop-blur rounded-xl px-4 py-4 border border-slate-200/60 shadow-sm">
+        <svg class="w-6 h-6 mx-auto text-emerald-500 mb-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        <span class="font-medium">AI + 专家复核</span>
+      </div>
+      <div class="bg-white/70 backdrop-blur rounded-xl px-4 py-4 border border-slate-200/60 shadow-sm">
+        <svg class="w-6 h-6 mx-auto text-emerald-500 mb-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        <span id="trustCount" class="font-medium">已预审 0 份产品</span>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="text-center pb-8 text-xs text-slate-400">
+    &copy; 2026 消字号合规预审引擎 &middot; 仅供品牌方内部使用
+  </footer>
+
+  <script>
+    // ============================================================
+    //  Mode Toggle
+    // ============================================================
+    const modeBtns = document.querySelectorAll('.mode-btn');
+    const panels = {
+      upload: document.getElementById('upload-mode'),
+      text: document.getElementById('text-mode'),
+    };
+
+    modeBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.mode;
+        modeBtns.forEach(b => {
+          if (b.dataset.mode === mode) {
+            b.className = 'mode-btn px-5 py-2 rounded-full font-medium transition-all duration-200 bg-primary-600 text-white shadow-sm';
+          } else {
+            b.className = 'mode-btn px-5 py-2 rounded-full font-medium transition-all duration-200 bg-white text-slate-600 border border-slate-300 hover:bg-slate-50';
+          }
+        });
+        Object.entries(panels).forEach(([key, el]) => {
+          el.classList.toggle('hidden', key !== mode);
+        });
+        // Hide any previous results when switching modes
+        document.getElementById('reportArea').classList.add('hidden');
+        document.getElementById('errorArea').classList.add('hidden');
+        document.getElementById('progressArea').classList.add('hidden');
+      });
+    });
+
+    // ============================================================
+    //  Drag & Drop
+    // ============================================================
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileNameDisplay = document.getElementById('fileNameDisplay');
+    const submitBtn = document.getElementById('submitUploadBtn');
+    let selectedFile = null;
+
+    // Click drop zone → open file picker
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    // File input change
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        setSelectedFile(e.target.files[0]);
+      }
+    });
+
+    // Drag events
+    ['dragenter', 'dragover'].forEach(evt => {
+      dropZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add('drop-zone-dragover');
+      });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+      dropZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('drop-zone-dragover');
+      });
+    });
+    dropZone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        setSelectedFile(files[0]);
+      }
+    });
+
+    function setSelectedFile(file) {
+      const validTypes = ['.pdf', '.png', '.jpg', '.jpeg'];
+      const ext = '.' + file.name.split('.').pop().toLowerCase();
+      if (!validTypes.includes(ext)) {
+        showError('不支持的文件格式: ' + ext + '，请上传 PDF、PNG 或 JPG 文件');
+        clearSelectedFile();
+        return;
+      }
+      selectedFile = file;
+      const maxSize = 20 * 1024 * 1024; // 20 MB
+      if (file.size > maxSize) {
+        showError('文件大小超过 20MB 限制，请压缩后重试');
+        clearSelectedFile();
+        return;
+      }
+      fileNameDisplay.textContent = '已选择: ' + file.name + ' (' + formatFileSize(file.size) + ')';
+      fileNameDisplay.classList.remove('hidden');
+      submitBtn.disabled = false;
+      document.getElementById('errorArea').classList.add('hidden');
+    }
+
+    function clearSelectedFile() {
+      selectedFile = null;
+      fileInput.value = '';
+      fileNameDisplay.classList.add('hidden');
+      submitBtn.disabled = true;
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    // ============================================================
+    //  Upload
+    // ============================================================
+    submitBtn.addEventListener('click', handleUpload);
+
+    async function handleUpload() {
+      if (!selectedFile) return;
+      submitBtn.disabled = true;
+
+      showProgress('正在上传文件……');
+      setProgressBar(20);
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      try {
+        setProgressText('正在解析文件并执行合规预审……');
+        setProgressBar(50);
+
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+
+        setProgressBar(90);
+
+        if (data.success) {
+          setProgressText('预审完成，正在生成报告……');
+          // Small delay to show 100%
+          setProgressBar(100);
+          await sleep(300);
+          hideProgress();
+          showReport(data.report, data.summary);
+        } else {
+          hideProgress();
+          showError(data.error || '预审处理失败，请重试');
+        }
+      } catch (err) {
+        hideProgress();
+        showError('网络请求失败: ' + err.message + '。请检查服务器是否运行。');
+      } finally {
+        submitBtn.disabled = false;
+      }
+    }
+
+    // ============================================================
+    //  Text Submission
+    // ============================================================
+    const textForm = document.getElementById('textForm');
+    textForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitTextBtn = document.getElementById('submitTextBtn');
+      submitTextBtn.disabled = true;
+      const formData = new FormData(textForm);
+      const payload = {};
+      formData.forEach((value, key) => { payload[key] = value; });
+
+      showProgress('正在提交信息……');
+      setProgressBar(30);
+
+      try {
+        setProgressText('正在执行合规预审……');
+        setProgressBar(60);
+
+        const res = await fetch('/api/preaudit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+
+        setProgressBar(90);
+
+        if (data.success) {
+          setProgressText('预审完成，正在生成报告……');
+          setProgressBar(100);
+          await sleep(300);
+          hideProgress();
+          showReport(data.report, data.summary);
+        } else {
+          hideProgress();
+          showError(data.error || '预审处理失败，请重试');
+        }
+      } catch (err) {
+        hideProgress();
+        showError('网络请求失败: ' + err.message + '。请检查服务器是否运行。');
+      } finally {
+        submitTextBtn.disabled = false;
+      }
+    });
+
+    // ============================================================
+    //  Report Display
+    // ============================================================
+    function showReport(markdownReport, summary) {
+      document.getElementById('errorArea').classList.add('hidden');
+
+      // Summary
+      const summaryGrid = document.getElementById('summaryGrid');
+      summaryGrid.innerHTML = '';
+      if (summary && typeof summary === 'object') {
+        const summaryItems = [
+          { label: '风险评级', key: 'risk_level', icon: shieldIcon },
+          { label: '问题数量', key: 'issue_count', icon: listIcon },
+          { label: '合规状态', key: 'compliance_status', icon: checkIcon },
+          { label: '建议操作', key: 'recommended_action', icon: actionIcon },
+        ];
+        summaryItems.forEach(item => {
+          let val = summary[item.key];
+          if (val !== undefined && val !== null) {
+            val = String(val);
+          } else {
+            val = '—';
+          }
+          const div = document.createElement('div');
+          div.className = 'p-2 rounded-lg bg-slate-50';
+          div.innerHTML = `
+            <div class="text-slate-400 mb-0.5">${item.icon}</div>
+            <div class="text-xs text-slate-500">${item.label}</div>
+            <div class="text-sm font-semibold text-slate-800 truncate" title="${val}">${val}</div>
+          `;
+          summaryGrid.appendChild(div);
+        });
+      } else {
+        summaryGrid.innerHTML = '<div class="col-span-4 text-sm text-slate-400 py-4">暂无摘要数据</div>';
+      }
+
+      // Report body - render markdown
+      const reportBody = document.getElementById('reportBody');
+      if (markdownReport) {
+        reportBody.innerHTML = renderMarkdown(markdownReport);
+      } else {
+        reportBody.innerHTML = '<p class="text-slate-400">暂无报告内容</p>';
+      }
+
+      // Update trust count
+      const trustCount = document.getElementById('trustCount');
+      const current = parseInt(trustCount.textContent.match(/\d+/)?.[0] || '0');
+      trustCount.textContent = '已预审 ' + (current + 1) + ' 份产品';
+
+      document.getElementById('reportArea').classList.remove('hidden');
+      document.getElementById('reportArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // ============================================================
+    //  Simple Markdown Renderer
+    // ============================================================
+    function renderMarkdown(md) {
+      let html = md
+        // Headers: ### ... → h3, ## ... → h2, # ... → h1
+        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+        .replace(/^# (.+)$/gm, '<h2>$1</h2>')
+        // Bold
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        // Italic
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        // Inline code
+        .replace(/`(.+?)`/g, '<code>$1</code>')
+        // Checklists: - [x] → ✅, - [ ] → ⬜
+        .replace(/- \[x\]\s+(.+)/gi, '<li class="flex items-start gap-2"><span class="text-green-500 mt-0.5">✅</span><span>$1</span></li>')
+        .replace(/- \[ \]\s+(.+)/gi, '<li class="flex items-start gap-2"><span class="text-slate-400 mt-0.5">⬜</span><span>$1</span></li>')
+        // Bullet list items
+        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        // Numbered list items
+        .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
+        // Horizontal rule
+        .replace(/^---$/gm, '<hr>')
+        // Blockquote
+        .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+        // Line breaks
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br>');
+
+      // Wrap consecutive <li> in <ul>
+      html = html.replace(/(<li>.*?<\/li>)(\s*<li>.*?<\/li>)*/gs, (match) => {
+        return '<ul>' + match + '</ul>';
+      });
+
+      // Wrap in <p> tags if not already wrapped
+      if (!html.startsWith('<h') && !html.startsWith('<ul') && !html.startsWith('<p') && !html.startsWith('<blockquote') && !html.startsWith('<hr')) {
+        html = '<p>' + html + '</p>';
+      }
+
+      return html;
+    }
+
+    // ============================================================
+    //  Progress Helpers
+    // ============================================================
+    function showProgress(text) {
+      document.getElementById('progressArea').classList.remove('hidden');
+      document.getElementById('reportArea').classList.add('hidden');
+      document.getElementById('errorArea').classList.add('hidden');
+      setProgressText(text);
+      setProgressBar(10);
+    }
+
+    function hideProgress() {
+      document.getElementById('progressArea').classList.add('hidden');
+    }
+
+    function setProgressText(text) {
+      document.getElementById('progressText').textContent = text;
+    }
+
+    function setProgressBar(pct) {
+      document.getElementById('progressBar').style.width = Math.min(pct, 100) + '%';
+    }
+
+    function showError(msg) {
+      document.getElementById('errorArea').classList.remove('hidden');
+      document.getElementById('errorMessage').textContent = msg;
+      document.getElementById('reportArea').classList.add('hidden');
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // ============================================================
+    //  Icons for Summary
+    // ============================================================
+    const shieldIcon = '<svg class="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>';
+    const listIcon = '<svg class="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>';
+    const checkIcon = '<svg class="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>';
+    const actionIcon = '<svg class="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>';
+
+    // ============================================================
+    //  Health Check on Load
+    // ============================================================
+    (async function() {
+      try {
+        const res = await fetch('/api/health');
+        const data = await res.json();
+        if (data.status === 'ok') {
+          console.log('引擎状态: OK, 版本:', data.version);
+        }
+      } catch (e) {
+        console.warn('健康检查失败，服务可能未运行:', e.message);
+      }
+    })();
+  </script>
+
+</body>
+</html>
