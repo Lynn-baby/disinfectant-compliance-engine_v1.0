@@ -25,6 +25,9 @@ zzzz2023-05原始资料/
 analysis_result.json
 ocr_output/
 
+# 本地数据（SQLite 数据库等运行时文件）
+data/
+
 # 本地 Claude 配置（每台机器不同）
 .claude/settings.local.json
 .cozeproj/reduction
